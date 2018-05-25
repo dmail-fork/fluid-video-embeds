@@ -82,6 +82,9 @@ You can't get the video dimensions (and thus aspect ratio) without doing some sl
 
 
 ## Changelog ##
+### 1.3.0 ###
+* Adds support for dailymotion videos
+
 ### 1.2.10 ###
 * Adds support for start time via: `t=` parameter
 * Adds support for overriding parameters via query string thanks to: [Woolloff](https://github.com/Woolloff)

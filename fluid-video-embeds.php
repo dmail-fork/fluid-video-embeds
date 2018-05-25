@@ -16,7 +16,8 @@ require_once( dirname( __FILE__ ) . '/lib/constants.php' );
 class FluidVideoEmbed{
     static $available_providers = array(
         'youtube',
-        'vimeo'
+        'vimeo',
+        'dailymotion',
     );
 
     function __construct() {
@@ -443,8 +444,8 @@ class FluidVideoEmbed{
                     $permalink = '//www.youtube.com/watch?v=' . $this->meta['id'];
                     $permalink = apply_filters( 'fve_youtube_permalink', $permalink, $this->meta );
                     $thumbnail = isset( $this->meta['full_image'] ) ? $this->meta['full_image'] : '';
-                    break;
-                    case 'vimeo':
+                break;
+                case 'vimeo':
                     $wrapper_padding = ( $this->meta['aspect'] * 100 ) . '%';
 
                     $iframe_url = '//player.vimeo.com/video/' . $this->meta['id'] . '?portrait=0&byline=0&title=0';
@@ -452,19 +453,31 @@ class FluidVideoEmbed{
                     $permalink = '//vimeo.com/' . $this->meta['id'];
                     $permalink = apply_filters( 'fve_vimeo_permalink', $permalink, $this->meta );
                     $thumbnail = isset( $this->meta['full_image'] ) ? $this->meta['full_image'] : '';
-                    break;
-                }
+                break;
 
-                ob_start();
-                include( FLUID_VIDEO_EMBEDS_DIRNAME . '/views/elements/_iframe_embed.php' );
-                $output = ob_get_contents();
-                ob_end_clean();
+                case 'dailymotion':
+                    $wrapper_padding = ( $this->meta['aspect'] * 100 ) . '%';
 
-                return $output;
+                    $iframe_url = apply_filters( 'fve_dailymotion_iframe_url', $iframe_url, $this->meta );
+                    $iframe_url = '//dailymotion.com/embed/video/'.$this->meta['id'];
+
+                    $permalink = '//dailymotion.com/video/'.$this->meta['id'];
+                    $permalink = apply_filters( 'fve_dailymotion_permalink', $permalink, $this->meta );
+
+                    $thumbnail = isset( $this->meta['full_image'] ) ? $this->meta['full_image'] : '';
+                break;
             }
 
-            return false;
+            ob_start();
+            include( FLUID_VIDEO_EMBEDS_DIRNAME . '/views/elements/_iframe_embed.php' );
+            $output = ob_get_contents();
+            ob_end_clean();
+
+            return $output;
         }
+
+        return false;
+    }
 
     /**
      * Filter the Video Embeds
@@ -533,9 +546,15 @@ class FluidVideoEmbed{
         if( preg_match( '/(youtu\.be)/i', $url ) ){
             return 'youtube';
         }
+        if( preg_match( '/(dai\.ly)/i', $url ) ){
+            return 'dailymotion';
+        }
+        if( preg_match( '/(dailymotion.com)/i', $url ) ){
+            return 'dailymotion';
+        }
 
         // Detect the dotcoms normally.
-        preg_match( '/((youtube|vimeo|dailymotion)\.com)/i', $url, $matches );
+        preg_match( '/((youtube|vimeo)\.com)/i', $url, $matches );
 
         // If nothing was detected...
         if( !isset( $matches[2] ) )
@@ -570,32 +589,32 @@ class FluidVideoEmbed{
 
         switch( $video_provider ){
             case 'youtube':
-            $thumbnail_url = 'https://img.youtube.com/vi/' . $video_id . '/mqdefault.jpg';
+                $thumbnail_url = 'https://img.youtube.com/vi/' . $video_id . '/mqdefault.jpg';
             break;
 
             case 'dailymotion':
-            $thumbnail_url = 'https://www.dailymotion.com/thumbnail/160x120/video/' . $video_id;
+                $thumbnail_url = 'https://www.dailymotion.com/thumbnail/160x120/video/' . $video_id;
             break;
 
             case 'vimeo':
                 // Create a cache key
-            $cache_key = $video_provider . $video_id . 'vimeo-thumbs';
+                $cache_key = $video_provider . $video_id . 'vimeo-thumbs';
 
                 // Attempt to read the cache
-            $_thumbnail_url = $this->cache_read( $cache_key );
+                $_thumbnail_url = $this->cache_read( $cache_key );
 
                 // if cache doesn't exist
-            if( !$_thumbnail_url ){
-                $response = wp_remote_get( 'https://vimeo.com/api/v2/video/' . $video_id . '.json' );
-                if( !is_wp_error( $response ) ) {
-                    $response_json = json_decode( $response['body'] );
-                    $video = reset( $response_json );
-                    $thumbnail_url = $video->thumbnail_medium;
+                if( !$_thumbnail_url ){
+                    $response = wp_remote_get( 'https://vimeo.com/api/v2/video/' . $video_id . '.json' );
+                    if( !is_wp_error( $response ) ) {
+                        $response_json = json_decode( $response['body'] );
+                        $video = reset( $response_json );
+                        $thumbnail_url = $video->thumbnail_medium;
 
                         // Write the cache
-                    $this->cache_write( $cache_key, $thumbnail_url, $this->cache_duration );
+                        $this->cache_write( $cache_key, $thumbnail_url, $this->cache_duration );
+                    }
                 }
-            }
             break;
         }
         return $thumbnail_url;
@@ -609,7 +628,7 @@ class FluidVideoEmbed{
      * @return string The ID of the video for the service detected.
      */
     function get_video_id_from_url( $url ){
-        preg_match( '/(youtube\.com|youtu\.be|vimeo\.com|dailymotion\.com)/i', $url, $matches );
+        preg_match( '/(youtube\.com|youtu\.be|vimeo\.com|dailymotion\.com|dai\.ly)/i', $url, $matches );
         $domain = $matches[1];
         $video_id = "";
 
@@ -617,22 +636,33 @@ class FluidVideoEmbed{
             case 'youtube.com':
                 if( preg_match( '/^[^v]+v.(.{11}).*/i', $url, $youtube_matches ) ) {
                     $video_id = $youtube_matches[1];
-                } elseif( preg_match( '/youtube.com\/user\/(.*)\/(.{11})$/i', $url, $youtube_matches ) ) {
+                } elseif( preg_match( '/youtube.com\/user\/(.*)\/(.*)$/i', $url, $youtube_matches ) ) {
                     $video_id = $youtube_matches[2];
                 }
-                break;
+            break;
 
             case 'youtu.be':
-                if( preg_match( '/youtu.be\/(.{11})/i', $url, $youtube_matches ) ) {
+                if( preg_match( '/youtu.be\/(.*)$/i', $url, $youtube_matches ) ) {
                     $video_id = $youtube_matches[1];
                 }
-                break;
+            break;
 
             case 'vimeo.com':
                 preg_match( '/(clip\:)?(\d+).*$/i', $url, $vimeo_matches );
                 $video_id = $vimeo_matches[2];
-                break;
+            break;
 
+            case 'dailymotion.com':
+                if( preg_match( '/dailymotion.com\/video\/(.*)$/i', $url, $dailymotion_matches ) ) {
+                    $video_id = $dailymotion_matches[1];
+                }
+            break;
+
+            case 'dai.ly':
+                if( preg_match( '/dai.ly\/(.*)$/i', $url, $dailymotion_matches ) ) {
+                    $video_id = $dailymotion_matches[1];
+                }
+            break;
         }
         return $video_id;
     }
@@ -656,19 +686,27 @@ class FluidVideoEmbed{
      */
     function get_video_meta_from_url( $url ) {
         $service = $this->get_video_provider_slug_from_url( $url );
+
+
         $video_id = $this->get_video_id_from_url( $url );
 
         $video_meta = array(
             'id' => $video_id,
             'service' => $service
-            );
+        );
+
+
+        if ($service == "dailymotion")
+        {
+            $video_meta['aspect'] = 1080/1920; // 16:9
+            return $video_meta;
+        }
 
         // Create a cache key
         $cache_key = "video-meta-{$service}{$video_id}";
 
         // Attempt to read the cache for the response
         $response = $this->cache_read( $cache_key );
-
         if( !$response ) {
             switch( $service ) {
                 case "youtube":
@@ -683,7 +721,6 @@ class FluidVideoEmbed{
                     $url = 'https://vimeo.com/api/v2/video/' . $video_id . '.json';
                 break;
             }
-
             $response = wp_remote_get( $url, array( 'sslverify' => false ) );
 
             // Only update the cache if this is not an error
@@ -698,53 +735,51 @@ class FluidVideoEmbed{
             if( !empty( $response_json ) ) {
                 switch( $service ){
                     case 'youtube':
+                        if( $response_json->pageInfo->totalResults == 0 ) break;
 
-                    if( $response_json->pageInfo->totalResults == 0 ) break;
-
-                    $video_meta['title'] = $response_json->items[0]->snippet->title;
-                    $video_meta['permalink'] = 'https://www.youtube.com/watch?v=' . $video_id;
-                    $video_meta['description'] = $response_json->items[0]->snippet->title;
-                    $video_meta['thumbnail'] = 'https://img.youtube.com/vi/' . $video_id . '/mqdefault.jpg';
-                    $video_meta['full_image'] = $this->get_youtube_max_thumbnail( $video_id );
-                    $video_meta['created_at'] = strtotime( $response_json->items[0]->snippet->publishedAt );
-                    $video_meta['aspect'] = 'widescreen';
-                    if( isset( $response_json->items[0]->contentDetails->definition ) ) {
-                        $video_meta['aspect'] = ( $response_json->items[0]->contentDetails->definition === 'hd' ) ? 'widescreen' : 'standard';
-                    }
-
-                    // Allow the widescreen option to be overriden
-                    if( $this->fve_force_youtube_16_9 ) {
+                        $video_meta['title'] = $response_json->items[0]->snippet->title;
+                        $video_meta['permalink'] = 'https://www.youtube.com/watch?v=' . $video_id;
+                        $video_meta['description'] = $response_json->items[0]->snippet->title;
+                        $video_meta['thumbnail'] = 'https://img.youtube.com/vi/' . $video_id . '/mqdefault.jpg';
+                        $video_meta['full_image'] = $this->get_youtube_max_thumbnail( $video_id );
+                        $video_meta['created_at'] = strtotime( $response_json->items[0]->snippet->publishedAt );
                         $video_meta['aspect'] = 'widescreen';
-                    }
-                    $video_meta['duration'] = $response_json->items[0]->contentDetails->duration;
+                        if( isset( $response_json->items[0]->contentDetails->definition ) ) {
+                            $video_meta['aspect'] = ( $response_json->items[0]->contentDetails->definition === 'hd' ) ? 'widescreen' : 'standard';
+                        }
 
-                    if( isset( $response_json->items[0]->snippet->channelTitle ) ) {
-                        $video_meta['author_name'] = $response_json->items[0]->snippet->channelTitle;
-                        $video_meta['author_url'] = "https://www.youtube.com/channel/" . $response_json->items[0]->snippet->channelId;
-                    }
+                        // Allow the widescreen option to be overriden
+                        if( $this->fve_force_youtube_16_9 ) {
+                            $video_meta['aspect'] = 'widescreen';
+                        }
+                        $video_meta['duration'] = $response_json->items[0]->contentDetails->duration;
+
+                        if( isset( $response_json->items[0]->snippet->channelTitle ) ) {
+                            $video_meta['author_name'] = $response_json->items[0]->snippet->channelTitle;
+                            $video_meta['author_url'] = "https://www.youtube.com/channel/" . $response_json->items[0]->snippet->channelId;
+                        }
                     break;
 
                     case 'vimeo':
-                    $video = reset( $response_json );
-                    $video_meta['title'] = $video->title;
-                    $video_meta['permalink'] = 'https://vimeo.com/' . $video_id;
-                    $video_meta['description'] =  $video->description;
-                    $video_meta['thumbnail'] = $video->thumbnail_medium;
-                    $video_meta['full_image'] = $video->thumbnail_large;
-                    $video_meta['author_name'] = $video->user_name;
-                    $video_meta['author_url'] = $video->user_url;
-                    $video_meta['author_avatar'] = $video->user_portrait_small;
-                    $video_meta['aspect'] = $video->height / $video->width;
-                    $video_meta['duration'] = $video->duration;
-                    // Allow the widescreen option to be overriden
-                    if( $this->fve_force_vimeo_16_9 ) {
-                        $video_meta['aspect'] = 1080/1920; // 16:9
-                    }
+                        $video = reset( $response_json );
+                        $video_meta['title'] = $video->title;
+                        $video_meta['permalink'] = 'https://vimeo.com/' . $video_id;
+                        $video_meta['description'] =  $video->description;
+                        $video_meta['thumbnail'] = $video->thumbnail_medium;
+                        $video_meta['full_image'] = $video->thumbnail_large;
+                        $video_meta['author_name'] = $video->user_name;
+                        $video_meta['author_url'] = $video->user_url;
+                        $video_meta['author_avatar'] = $video->user_portrait_small;
+                        $video_meta['aspect'] = $video->height / $video->width;
+                        $video_meta['duration'] = $video->duration;
+                        // Allow the widescreen option to be overriden
+                        if( $this->fve_force_vimeo_16_9 ) {
+                            $video_meta['aspect'] = 1080/1920; // 16:9
+                        }
                     break;
                 }
             }
         }
-
         return $video_meta;
     }
 
